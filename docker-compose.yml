@@ -1,0 +1,143 @@
+version: '3.8'
+
+services:
+
+  # 1. Le service Base de Données (MySQL)
+  db:
+    image: mysql:8.0
+    container_name: alpaca_db
+    restart: always
+    environment:
+      # Mot de passe en dur
+      MYSQL_ROOT_PASSWORD: 'fabrice' 
+      MYSQL_DATABASE: 'trading_dashboard'
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./mysql-init:/docker-entrypoint-initdb.d
+    ports:
+      - "3307:3306" 
+    healthcheck:
+      # CORRECTION CLÉ : Mot de passe 'fabrice' mis en dur ici
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-pfabrice"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # 2. Le service Worker (Python)
+  worker:
+    container_name: alpaca_worker
+    build:
+      context: ./ # Dossier où se trouve le Dockerfile du worker
+    restart: always
+    environment:
+      API_KEY: 'PKIJWYB3F35CGBFPIHVK6DECPK' # Clé en dur
+      API_SECRET: 'DtTtkRzWYY2XHQp8EBqRmZFnjagpooHYD7MrwP2tELXt' # Clé en dur
+      DB_HOST: 'db' 
+      DB_USER: 'root'
+      DB_PASS: 'fabrice' # Mot de passe en dur
+      DB_NAME: 'trading_dashboard'
+    depends_on:
+      db:
+        condition: service_healthy # Attend que la BDD soit prête
+
+  # 3. Le service Backend (Node.js)
+  backend:
+    container_name: alpaca_backend
+    build:
+      context: ./alpaca_backend # Dossier de votre API Node
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      DB_HOST: 'db'
+      DB_USER: 'root'
+      DB_PASS: 'fabrice' # Mot de passe en dur
+      DB_NAME: 'trading_dashboard'
+    depends_on:
+      db:
+        condition: service_healthy # Attend aussi que la BDD soit prête
+
+  # 4. Le service Frontend (Vue.js / Nginx)
+  frontend:
+    container_name: alpaca_frontend
+    build:
+      context: ./alpaca-frontend # Dossier de votre app Vue
+    restart: always
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+      
+  # 5. Le service Market IDS (Analyse Quantitative)
+  ids:
+    container_name: alpaca_ids
+    build:
+      context: ./alpaca_ids
+    restart: always
+    environment:
+      DB_HOST: 'db'
+      DB_USER: 'root'
+      DB_PASS: 'fabrice'
+      DB_NAME: 'trading_dashboard'
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # 6. Le Worker Binance (Comparateur)
+  binance:
+    container_name: alpaca_binance
+    build:
+      context: ./binance_worker
+    restart: always
+    environment:
+      DB_HOST: 'db'
+      DB_USER: 'root'
+      DB_PASS: 'fabrice'
+      DB_NAME: 'trading_dashboard'
+    depends_on:
+      db:
+        condition: service_healthy      
+ 
+  # 7. Le Coffre-fort (Security)
+  vault:
+    image: vault:1.13.3
+    container_name: alpaca_vault
+    ports:
+      - "8200:8200"
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: 'root_token_secret' # Token maître pour le dév
+      VAULT_ADDR: 'http://0.0.0.0:8200'
+    cap_add:
+      - IPC_LOCK # Nécessaire pour verrouiller la mémoire (sécurité)      
+
+  # 8. Le Sniffer Réseau (Network Analysis)
+  sniffer:
+    container_name: alpaca_sniffer
+    build:
+      context: ./alpaca_sniffer
+    # Cette ligne est MAGIQUE : elle attache ce conteneur directement
+    # au réseau du conteneur 'db'. Ils partagent la même carte réseau (eth0).
+    network_mode: "service:db" 
+    # Nécessaire pour que Scapy puisse écouter
+    cap_add:
+      - NET_ADMIN
+    depends_on:
+      - db    
+ 
+  # 9. Le Détecteur IA (Machine Learning)
+  ml_fraud:
+    container_name: alpaca_ml
+    build:
+      context: ./alpaca_ml
+    restart: always
+    environment:
+      DB_HOST: 'db'
+      DB_USER: 'root'
+      DB_PASS: 'fabrice'
+      DB_NAME: 'trading_dashboard'
+    depends_on:
+      db:
+        condition: service_healthy    
+volumes:
+  mysql_data:

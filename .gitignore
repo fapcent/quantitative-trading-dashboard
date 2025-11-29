@@ -1,0 +1,11 @@
+# Dépendances
+node_modules/
+__pycache__/
+*.pyc
+
+# Fichiers système
+.DS_Store
+Thumbs.db
+
+# Environnement et Secrets (si vous en utilisez plus tard)
+.env
